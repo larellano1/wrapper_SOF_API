@@ -542,7 +542,7 @@ class Despesas(RequisicaoApi):
     def __init__(self, ano_dotacao, mes_dotacao, cod_empresa = '', cod_orgao = '', cod_unidade = '', funcao = '', subfuncao = '', projeto_atividade = '', programa = '',  categoria = '', grupo = '', modalidade = '', elemento = '', fonte = '', csv = False):
         
         self.consulta = 'consultarDespesasCredor'
-        self.key_dados = 'lstCredores'
+        self.key_dados = 'lstDespesas'
         self.csv = csv
         
         self.dict_consulta = {}
