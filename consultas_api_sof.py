@@ -378,25 +378,7 @@ class Empresas(RequisicaoApi):
             
         self.dados = self.puxar_todos_valores(self.key_dados, self.consulta, self.dict_consulta, self.csv)
         
-        
-class Empresas(RequisicaoApi):
-    
-    def __init__(self, ano, cod_subfuncao = '', csv = False):
-        
-        self.consulta = 'consultarSubFuncoes'
-        self.key_dados = 'lstSubFuncoes'
-        self.csv = csv
-        
-        self.dict_consulta = {}
-        
-        self.dict_consulta['anoExercicio'] = ano
-        
-        if cod_subfuncao:
-            self.dict_consulta['codSubFuncao'] = cod_subfuncao
-            
-        self.dados = self.puxar_todos_valores(self.key_dados, self.consulta, self.dict_consulta, self.csv)
-        
-        
+             
 class Liquidacoes(RequisicaoApi):
     
     def __init__(self, ano_empenho, cod_empenho, cod_empresa, csv = False):
