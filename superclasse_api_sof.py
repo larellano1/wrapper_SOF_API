@@ -6,7 +6,7 @@ A API SOF foi migrada da Prodam para a APILIB da Prefeitura em agosto/2023:
 Configuração via variáveis de ambiente (ou arquivo .env na raiz do projeto):
 
     SOF_API_BASE_URL          URL base da API
-                              (default: https://gateway.apilib.prefeitura.sp.gov.br/financas/orcamento/sof/v2.1.0)
+                              (default: https://gateway.apilib.prefeitura.sp.gov.br/sf/sof/v4)
 
     --- modo simples: token estático colado da UI da APILIB (expira em ~1h) ---
     SOF_API_TOKEN             access token Bearer
@@ -45,7 +45,7 @@ class RequisicaoApi:
     """
 
     DEFAULT_BASE_URL = (
-        "https://gateway.apilib.prefeitura.sp.gov.br/financas/orcamento/sof/v2.1.0"
+        "https://gateway.apilib.prefeitura.sp.gov.br/sf/sof/v4"
     )
     DEFAULT_TOKEN_URL = "https://gateway.apilib.prefeitura.sp.gov.br/token"
 
