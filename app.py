@@ -228,18 +228,26 @@ def aplicar_anualizacao(
 ) -> tuple[pd.DataFrame, dict[int, float]]:
     """Multiplica fases de fluxo do ano corrente por (12 / mês_corte).
 
-    Retorna o DataFrame ajustado e um dict {ano: fator} para exibição.
+    Apenas o exercício mais recente é projetado. Anos anteriores (mesmo que
+    a base consolidada exiba uma DataFinal < 31/12 — o que acontece porque
+    os restos a pagar daquele exercício continuam sendo movimentados depois)
+    permanecem inalterados, para evitar comparar maçãs com maçãs anualizadas.
+
+    Retorna o DataFrame ajustado e {ano: fator} para exibição.
     """
     df = df.copy()
     fatores: dict[int, float] = {}
-    for ano, mes in cortes.items():
-        if not mes or mes >= 12:
-            continue
-        fator = 12 / mes
-        fatores[ano] = fator
-        mask = df["Ano"] == ano
-        for fase in FASES_FLUXO:
-            df.loc[mask, fase] = df.loc[mask, fase] * fator
+    if not cortes:
+        return df, fatores
+    ano_corrente = max(cortes.keys())
+    mes = cortes.get(ano_corrente, 12)
+    if not mes or mes >= 12:
+        return df, fatores
+    fator = 12 / mes
+    fatores[ano_corrente] = fator
+    mask = df["Ano"] == ano_corrente
+    for fase in FASES_FLUXO:
+        df.loc[mask, fase] = df.loc[mask, fase] * fator
     return df, fatores
 
 
