@@ -69,9 +69,29 @@ def listar_fontes_disponiveis() -> list[tuple[str, str]]:
     ]
 
 
+@st.cache_data
+def listar_orgaos_disponiveis() -> list[tuple[str, str]]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql(
+        f"SELECT DISTINCT Cd_Orgao, Ds_Orgao FROM {TABLE} "
+        "WHERE Cd_Orgao IS NOT NULL "
+        "ORDER BY CAST(Cd_Orgao AS INTEGER)",
+        conn,
+    )
+    conn.close()
+    return [
+        (str(row.Cd_Orgao), str(row.Ds_Orgao) if row.Ds_Orgao else "")
+        for row in df.itertuples()
+    ]
+
+
 @st.cache_data(show_spinner="Lendo dados do BD local...")
 def carregar_agregado(
-    anos: tuple[int, ...], fontes: tuple[str, ...] = ()
+    anos: tuple[int, ...],
+    fontes: tuple[str, ...] = (),
+    orgaos: tuple[str, ...] = (),
 ) -> pd.DataFrame:
     conn = sqlite3.connect(DB_PATH)
     placeholders_anos = ",".join("?" * len(anos))
@@ -79,13 +99,15 @@ def carregar_agregado(
     where_extra = ""
     if fontes:
         placeholders_fontes = ",".join("?" * len(fontes))
-        where_extra = f" AND Cd_Fonte IN ({placeholders_fontes})"
+        where_extra += f" AND Cd_Fonte IN ({placeholders_fontes})"
         params.extend(fontes)
+    if orgaos:
+        placeholders_orgaos = ",".join("?" * len(orgaos))
+        where_extra += f" AND Cd_Orgao IN ({placeholders_orgaos})"
+        params.extend(orgaos)
     query = f"""
         SELECT
             CAST(Cd_Exercicio AS INTEGER) AS Ano,
-            Cd_Orgao,
-            Ds_Orgao,
             Cd_Funcao,
             Ds_Funcao,
             Categoria_Despesa AS Cd_Categoria,
@@ -100,7 +122,7 @@ def carregar_agregado(
             SUM(Disponivel) AS "Disponível"
         FROM {TABLE}
         WHERE CAST(Cd_Exercicio AS INTEGER) IN ({placeholders_anos}){where_extra}
-        GROUP BY Cd_Exercicio, Cd_Orgao, Ds_Orgao, Cd_Funcao, Ds_Funcao,
+        GROUP BY Cd_Exercicio, Cd_Funcao, Ds_Funcao,
                  Categoria_Despesa, Ds_Categoria, Grupo_Despesa, Ds_Grupo
     """
     df = pd.read_sql(query, conn, params=params)
@@ -209,6 +231,10 @@ def main() -> None:
     fonte_label_to_cod = {
         f"{cod} — {desc}" if desc else cod: cod for cod, desc in fontes_disp
     }
+    orgaos_disp = listar_orgaos_disponiveis()
+    orgao_label_to_cod = {
+        f"{cod} — {desc}" if desc else cod: cod for cod, desc in orgaos_disp
+    }
 
     with st.sidebar:
         st.header("Filtros")
@@ -220,6 +246,12 @@ def main() -> None:
             "Anos para comparação",
             options=anos_disp,
             default=default_anos,
+        )
+        orgaos_labels = st.multiselect(
+            "Órgão",
+            options=list(orgao_label_to_cod.keys()),
+            default=[],
+            help="Vazio = todos os órgãos.",
         )
         fontes_labels = st.multiselect(
             "Fonte de recurso",
@@ -241,30 +273,21 @@ def main() -> None:
         st.stop()
 
     fontes_codigos = tuple(fonte_label_to_cod[lbl] for lbl in fontes_labels)
+    orgaos_codigos = tuple(orgao_label_to_cod[lbl] for lbl in orgaos_labels)
     unidade = UNIDADES[unidade_label]
-    df_all = carregar_agregado(tuple(sorted(anos)), fontes_codigos)
+    df_all = carregar_agregado(
+        tuple(sorted(anos)), fontes_codigos, orgaos_codigos
+    )
     if df_all.empty:
-        st.error("Nenhum dado encontrado para os anos selecionados.")
+        st.error("Nenhum dado encontrado para os filtros selecionados.")
         st.stop()
 
-    aba_orgao, aba_funcao, aba_cat = st.tabs(
+    aba_funcao, aba_cat = st.tabs(
         [
-            "Despesas por Órgão",
             "Despesas por Função",
             "Despesas por Categoria Econômica",
         ]
     )
-
-    with aba_orgao:
-        render_secao(
-            df_all,
-            anos,
-            cod_col="Cd_Orgao",
-            desc_col="Ds_Orgao",
-            titulo="Despesas por Órgão",
-            rotulo_dim="Órgão",
-            unidade=unidade,
-        )
 
     with aba_funcao:
         render_secao(
