@@ -131,7 +131,7 @@ def render_secao(
     if dim_cod not in df_all.columns:
         st.warning(
             f"O campo `{dim_cod}` não foi encontrado no retorno da API. "
-            "Confira o formato dos dados retornados."
+            f"Colunas disponíveis: {sorted(df_all.columns.tolist())}"
         )
         return
 
