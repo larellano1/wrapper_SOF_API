@@ -126,18 +126,18 @@ class RequisicaoApi:
                     f"Resposta não-JSON da API SOF em {url}: {snippet}"
                 ) from exc
 
-        if isinstance(payload, dict) and "metadados" not in payload:
+        if isinstance(payload, dict) and "metaDados" not in payload:
             keys = list(payload.keys())
             snippet = str(payload)[:500]
             raise RuntimeError(
-                f"Resposta da API SOF sem envelope 'metadados'. "
+                f"Resposta da API SOF sem envelope 'metaDados'. "
                 f"URL: {url} | chaves recebidas: {keys} | trecho: {snippet}"
             )
         return payload
 
     def __formater_csv(self, dados, key_dados):
-        if dados["metadados"]["txtStatus"] == "ERRO":
-            return dados["metadados"]["txtMensagemErro"]
+        if dados["metaDados"]["txtStatus"] == "ERRO":
+            return dados["metaDados"]["txtMensagemErro"]
 
         valores = [c for c in dados[key_dados]]
         dic_dados = {coluna: [] for coluna in list(valores[0].keys())}
@@ -168,16 +168,16 @@ class RequisicaoApi:
 
         primeira_requisicao = self.__requisicao(1, consulta, dict_consulta)
 
-        if primeira_requisicao.get("metadados", {}).get("txtStatus") == "ERRO":
+        if primeira_requisicao.get("metaDados", {}).get("txtStatus") == "ERRO":
             raise RuntimeError(
                 "API SOF retornou erro na primeira página: "
-                f"{primeira_requisicao['metadados'].get('txtMensagemErro')}"
+                f"{primeira_requisicao['metaDados'].get('txtMensagemErro')}"
             )
 
         if not primeira_requisicao.get(key_dados):
             return pd.DataFrame()
 
-        qtd_paginas = primeira_requisicao["metadados"]["qtdPaginas"]
+        qtd_paginas = primeira_requisicao["metaDados"]["qtdPaginas"]
         print("O total de paginas é :::" + str(qtd_paginas))
 
         if csv:
@@ -190,10 +190,10 @@ class RequisicaoApi:
 
         for i in range(1, qtd_paginas + 1):
             dados_requisi = self.__requisicao(i, consulta, dict_consulta)
-            if dados_requisi["metadados"]["txtStatus"] == "ERRO":
+            if dados_requisi["metaDados"]["txtStatus"] == "ERRO":
                 print(
                     "ERRO - pagina {pg} - txt erro :: {erro}".format(
-                        pg=i, erro=dados_requisi["metadados"]["txtMensagemErro"]
+                        pg=i, erro=dados_requisi["metaDados"]["txtMensagemErro"]
                     )
                 )
             else:

@@ -23,7 +23,7 @@ O manual oficial completo está em `docs/2024_09_16_MANUAL_SOF_API.pdf` (versão
 
 ```json
 {
-  "metadados": {
+  "metaDados": {
     "txtStatus": "OK | SEM_REGISTROS | ERRO",
     "txtMensagemErro": "",
     "qtdPaginas": 1
@@ -32,6 +32,7 @@ O manual oficial completo está em `docs/2024_09_16_MANUAL_SOF_API.pdf` (versão
 }
 ```
 
+- **Atenção**: a chave do envelope é `metaDados` (D maiúsculo) na resposta real, embora o manual PDF a grafe como `metadados`. Use `metaDados` ao acessar.
 - `txtStatus`: `OK` (sucesso com dados), `SEM_REGISTROS` (sucesso sem dados), `ERRO` (falha no processamento — checar `txtMensagemErro`).
 - `qtdPaginas`: número total de páginas de resultado.
 - A lista de dados tem nome variável conforme a consulta (ex: `lstDespesas`, `lstEmpenhos`, `lstContratos`).
