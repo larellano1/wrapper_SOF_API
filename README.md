@@ -9,3 +9,21 @@ Contém a superclasse que abstrai as consultas à API, parseia os Jsons gerando 
 ## modulo = consultas_api
 
 Contém as classes herdeiras da superclasse que replicam todas as consultas que podem ser realizadas à API, assim como seus respectivos parâmetros obrigatórios e opcionais
+
+## Dashboard orçamentário (Streamlit)
+
+O arquivo `app.py` contém um dashboard em Streamlit que consome o wrapper e
+apresenta as despesas da Prefeitura de São Paulo (Empenhada, Liquidada e Paga)
+em três visões — **Órgão**, **Função** e **Categoria Econômica** — com
+comparação entre anos e evolução temporal.
+
+### Como executar
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Use a barra lateral para selecionar os anos a comparar e o mês de referência
+(acumulado até). Os dados são cacheados em memória pelo Streamlit; o botão
+"Limpar cache e recarregar" força um novo refetch da API.
