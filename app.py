@@ -15,6 +15,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from consultas_api_sof import (  # noqa: E402
@@ -23,6 +30,19 @@ from consultas_api_sof import (  # noqa: E402
     Funcoes,
     Orgaos,
 )
+
+
+def _check_credentials() -> str | None:
+    if os.getenv("SOF_API_TOKEN"):
+        return None
+    if os.getenv("SOF_API_CONSUMER_KEY") and os.getenv("SOF_API_CONSUMER_SECRET"):
+        return None
+    return (
+        "Credenciais da API SOF não configuradas. Crie um arquivo `.env` "
+        "(use `.env.example` como base) com `SOF_API_CONSUMER_KEY` e "
+        "`SOF_API_CONSUMER_SECRET`, ou exporte `SOF_API_TOKEN`. "
+        "Cadastro: https://apilib.prefeitura.sp.gov.br/store/"
+    )
 
 
 st.set_page_config(
@@ -211,6 +231,11 @@ def main() -> None:
         "Fonte: API do SOF (Sistema Orçamentário Financeiro) da PMSP — "
         "valores em R$, agregados a partir de `consultarDespesas`."
     )
+
+    erro_cred = _check_credentials()
+    if erro_cred:
+        st.error(erro_cred)
+        st.stop()
 
     ano_atual = datetime.now().year
     with st.sidebar:
