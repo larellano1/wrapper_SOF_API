@@ -7,6 +7,7 @@ a partir do CSV consolidado da Execução Orçamentária da PMSP.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -17,6 +18,11 @@ DB_PATH = Path(__file__).parent / "despesas.db"
 TABLE = "execucao"
 
 FASES = ["Orçada", "Atualizada", "Empenhada", "Liquidada", "Paga", "Disponível"]
+FASES_FLUXO = ["Empenhada", "Liquidada", "Paga"]
+MESES_PT = [
+    "", "jan", "fev", "mar", "abr", "mai", "jun",
+    "jul", "ago", "set", "out", "nov", "dez",
+]
 
 UNIDADES = {
     "R$": (1.0, "R$"),
@@ -67,6 +73,45 @@ def listar_fontes_disponiveis() -> list[tuple[str, str]]:
         (str(row.Cd_Fonte), str(row.Ds_Fonte) if row.Ds_Fonte else "")
         for row in df.itertuples()
     ]
+
+
+def _parse_data_pt(valor: str) -> datetime | None:
+    if not valor or valor.lower() in {"none", "nan", "nat"}:
+        return None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(valor, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+@st.cache_data
+def mes_de_corte_por_ano() -> dict[int, int]:
+    """Retorna {ano: mês_máximo_de_DataFinal} a partir do BD.
+
+    Para anos passados normalmente é 12 (snapshot final do exercício); para o
+    ano corrente, é o mês da última extração.
+    """
+    if not DB_PATH.exists():
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql(
+        f"SELECT Cd_Exercicio, MAX(DataFinal) AS DataFinal FROM {TABLE} "
+        "WHERE DataFinal IS NOT NULL GROUP BY Cd_Exercicio",
+        conn,
+    )
+    conn.close()
+    cortes: dict[int, int] = {}
+    for row in df.itertuples():
+        try:
+            ano = int(row.Cd_Exercicio)
+        except (TypeError, ValueError):
+            continue
+        d = _parse_data_pt(str(row.DataFinal))
+        if d is not None:
+            cortes[ano] = d.month
+    return cortes
 
 
 @st.cache_data
@@ -128,6 +173,26 @@ def carregar_agregado(
     df = pd.read_sql(query, conn, params=params)
     conn.close()
     return df
+
+
+def aplicar_anualizacao(
+    df: pd.DataFrame, cortes: dict[int, int]
+) -> tuple[pd.DataFrame, dict[int, float]]:
+    """Multiplica fases de fluxo do ano corrente por (12 / mês_corte).
+
+    Retorna o DataFrame ajustado e um dict {ano: fator} para exibição.
+    """
+    df = df.copy()
+    fatores: dict[int, float] = {}
+    for ano, mes in cortes.items():
+        if not mes or mes >= 12:
+            continue
+        fator = 12 / mes
+        fatores[ano] = fator
+        mask = df["Ano"] == ano
+        for fase in FASES_FLUXO:
+            df.loc[mask, fase] = df.loc[mask, fase] * fator
+    return df, fatores
 
 
 def formatar_brl(valor: float, divisor: float = 1.0) -> str:
@@ -264,6 +329,17 @@ def main() -> None:
             options=list(UNIDADES.keys()),
             index=2,
         )
+        modo_comparacao = st.radio(
+            "Modo de comparação",
+            options=["Acumulado", "Anualizado"],
+            index=0,
+            help=(
+                "Acumulado: valores como estão no BD (ano corrente parcial). "
+                "Anualizado: Empenhada / Liquidada / Paga do ano corrente "
+                "são escaladas por 12 ÷ mês_corte para projetar o ano cheio. "
+                "Orçada, Atualizada e Disponível não são afetadas."
+            ),
+        )
         if st.button("Limpar cache e recarregar"):
             st.cache_data.clear()
             st.rerun()
@@ -281,6 +357,25 @@ def main() -> None:
     if df_all.empty:
         st.error("Nenhum dado encontrado para os filtros selecionados.")
         st.stop()
+
+    if modo_comparacao == "Anualizado":
+        cortes = mes_de_corte_por_ano()
+        df_all, fatores = aplicar_anualizacao(df_all, cortes)
+        if fatores:
+            partes = [
+                f"{ano} ×{fator:.2f} (snapshot até {MESES_PT[cortes[ano]]})"
+                for ano, fator in sorted(fatores.items())
+            ]
+            st.info(
+                "Modo **Anualizado** ativo — Empenhada/Liquidada/Paga foram "
+                "projetadas para o ano cheio: " + "; ".join(partes) + ". "
+                "Orçada, Atualizada e Disponível permanecem inalteradas."
+            )
+        else:
+            st.caption(
+                "Modo Anualizado: nenhum ano selecionado é parcial; "
+                "valores idênticos ao modo Acumulado."
+            )
 
     aba_funcao, aba_cat = st.tabs(
         [
