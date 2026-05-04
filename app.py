@@ -16,6 +16,8 @@ import streamlit as st
 DB_PATH = Path(__file__).parent / "despesas.db"
 TABLE = "execucao"
 
+FASES = ["Orçada", "Atualizada", "Empenhada", "Liquidada", "Paga"]
+
 st.set_page_config(
     page_title="Dashboard Orçamentário - PMSP",
     page_icon=":bar_chart:",
@@ -84,6 +86,8 @@ def carregar_agregado(
             Ds_Categoria,
             Grupo_Despesa AS Cd_Grupo,
             Ds_Grupo,
+            SUM(Vl_Orcado_Ano) AS "Orçada",
+            SUM(Vl_Orcado_Atualizado) AS "Atualizada",
             SUM(Vl_EmpenhadoLiquido) AS Empenhada,
             SUM(Vl_Liquidado) AS Liquidada,
             SUM(Vl_Pago) AS Paga
@@ -116,23 +120,22 @@ def render_secao(
     df[rotulo_dim] = df[desc_col].fillna(df[cod_col])
 
     agg = (
-        df.groupby(["Ano", cod_col, rotulo_dim], as_index=False)[
-            ["Empenhada", "Liquidada", "Paga"]
-        ].sum()
+        df.groupby(["Ano", cod_col, rotulo_dim], as_index=False)[FASES].sum()
     )
 
     st.subheader("Totais por ano")
     for ano in sorted(anos):
-        cols = st.columns(3)
+        cols = st.columns(len(FASES))
         sub = agg[agg["Ano"] == ano]
-        for i, fase in enumerate(["Empenhada", "Liquidada", "Paga"]):
+        for i, fase in enumerate(FASES):
             with cols[i]:
                 st.metric(f"{fase} • {ano}", formatar_brl(sub[fase].sum()))
 
     st.subheader("Comparação entre anos — Top 15")
     fase_barra = st.selectbox(
         "Fase da despesa",
-        ["Empenhada", "Liquidada", "Paga"],
+        FASES,
+        index=FASES.index("Empenhada"),
         key=f"fase_barra_{titulo}",
     )
     top = (
@@ -140,21 +143,29 @@ def render_secao(
     )
     agg_top = agg[agg[rotulo_dim].isin(top)].copy()
     agg_top["Ano"] = agg_top["Ano"].astype(str)
+    ordem_categorias = (
+        agg_top.groupby(rotulo_dim)[fase_barra]
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    ordem_anos = [str(a) for a in sorted(anos)]
     fig_bar = px.bar(
-        agg_top.sort_values(fase_barra, ascending=False),
+        agg_top.sort_values(["Ano", rotulo_dim]),
         x=rotulo_dim,
         y=fase_barra,
         color="Ano",
         barmode="group",
         title=f"Top 15 — {fase_barra}",
         labels={fase_barra: f"{fase_barra} (R$)"},
+        category_orders={rotulo_dim: ordem_categorias, "Ano": ordem_anos},
     )
     fig_bar.update_layout(xaxis_tickangle=-45, height=520)
     st.plotly_chart(fig_bar, use_container_width=True)
 
     with st.expander("Ver tabela agregada"):
         tabela = agg.copy()
-        for fase in ["Empenhada", "Liquidada", "Paga"]:
+        for fase in FASES:
             tabela[fase] = tabela[fase].map(formatar_brl)
         st.dataframe(tabela, use_container_width=True)
 
