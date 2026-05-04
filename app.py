@@ -16,7 +16,13 @@ import streamlit as st
 DB_PATH = Path(__file__).parent / "despesas.db"
 TABLE = "execucao"
 
-FASES = ["Orçada", "Atualizada", "Empenhada", "Liquidada", "Paga"]
+FASES = ["Orçada", "Atualizada", "Empenhada", "Liquidada", "Paga", "Disponível"]
+
+UNIDADES = {
+    "R$": (1.0, "R$"),
+    "R$ milhões": (1_000_000.0, "R$ mi"),
+    "R$ bilhões": (1_000_000_000.0, "R$ bi"),
+}
 
 st.set_page_config(
     page_title="Dashboard Orçamentário - PMSP",
@@ -90,7 +96,8 @@ def carregar_agregado(
             SUM(Vl_Orcado_Atualizado) AS "Atualizada",
             SUM(Vl_EmpenhadoLiquido) AS Empenhada,
             SUM(Vl_Liquidado) AS Liquidada,
-            SUM(Vl_Pago) AS Paga
+            SUM(Vl_Pago) AS Paga,
+            SUM(Disponivel) AS "Disponível"
         FROM {TABLE}
         WHERE CAST(Cd_Exercicio AS INTEGER) IN ({placeholders_anos}){where_extra}
         GROUP BY Cd_Exercicio, Cd_Orgao, Ds_Orgao, Cd_Funcao, Ds_Funcao,
@@ -101,8 +108,10 @@ def carregar_agregado(
     return df
 
 
-def formatar_brl(valor: float) -> str:
-    s = f"R$ {valor:,.0f}"
+def formatar_brl(valor: float, divisor: float = 1.0) -> str:
+    v = valor / divisor
+    casas = 0 if divisor == 1.0 else 2
+    s = f"R$ {v:,.{casas}f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
@@ -113,7 +122,9 @@ def render_secao(
     desc_col: str,
     titulo: str,
     rotulo_dim: str,
+    unidade: tuple[float, str] = (1.0, "R$"),
 ) -> None:
+    divisor, sufixo = unidade
     st.header(titulo)
     df = df_all.copy()
     df[cod_col] = df[cod_col].astype(str)
@@ -129,7 +140,10 @@ def render_secao(
         sub = agg[agg["Ano"] == ano]
         for i, fase in enumerate(FASES):
             with cols[i]:
-                st.metric(f"{fase} • {ano}", formatar_brl(sub[fase].sum()))
+                st.metric(
+                    f"{fase} • {ano}",
+                    formatar_brl(sub[fase].sum(), divisor),
+                )
 
     st.subheader("Comparação entre anos — Top 15")
     fase_barra = st.selectbox(
@@ -150,14 +164,16 @@ def render_secao(
         .index.tolist()
     )
     ordem_anos = [str(a) for a in sorted(anos)]
+    agg_plot = agg_top.sort_values(["Ano", rotulo_dim]).copy()
+    agg_plot[fase_barra] = agg_plot[fase_barra] / divisor
     fig_bar = px.bar(
-        agg_top.sort_values(["Ano", rotulo_dim]),
+        agg_plot,
         x=rotulo_dim,
         y=fase_barra,
         color="Ano",
         barmode="group",
         title=f"Top 15 — {fase_barra}",
-        labels={fase_barra: f"{fase_barra} (R$)"},
+        labels={fase_barra: f"{fase_barra} ({sufixo})"},
         category_orders={rotulo_dim: ordem_categorias, "Ano": ordem_anos},
     )
     fig_bar.update_layout(xaxis_tickangle=-45, height=520)
@@ -166,7 +182,9 @@ def render_secao(
     with st.expander("Ver tabela agregada"):
         tabela = agg.copy()
         for fase in FASES:
-            tabela[fase] = tabela[fase].map(formatar_brl)
+            tabela[fase] = tabela[fase].map(
+                lambda v, d=divisor: formatar_brl(v, d)
+            )
         st.dataframe(tabela, use_container_width=True)
 
 
@@ -209,6 +227,11 @@ def main() -> None:
             default=[],
             help="Vazio = todas as fontes.",
         )
+        unidade_label = st.radio(
+            "Unidade de medida",
+            options=list(UNIDADES.keys()),
+            index=2,
+        )
         if st.button("Limpar cache e recarregar"):
             st.cache_data.clear()
             st.rerun()
@@ -218,6 +241,7 @@ def main() -> None:
         st.stop()
 
     fontes_codigos = tuple(fonte_label_to_cod[lbl] for lbl in fontes_labels)
+    unidade = UNIDADES[unidade_label]
     df_all = carregar_agregado(tuple(sorted(anos)), fontes_codigos)
     if df_all.empty:
         st.error("Nenhum dado encontrado para os anos selecionados.")
@@ -239,6 +263,7 @@ def main() -> None:
             desc_col="Ds_Orgao",
             titulo="Despesas por Órgão",
             rotulo_dim="Órgão",
+            unidade=unidade,
         )
 
     with aba_funcao:
@@ -249,6 +274,7 @@ def main() -> None:
             desc_col="Ds_Funcao",
             titulo="Despesas por Função",
             rotulo_dim="Função",
+            unidade=unidade,
         )
 
     with aba_cat:
@@ -269,6 +295,7 @@ def main() -> None:
             desc_col=desc_col,
             titulo=f"Despesas por {nivel}",
             rotulo_dim=rotulo,
+            unidade=unidade,
         )
 
 
