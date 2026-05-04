@@ -78,12 +78,45 @@ def listar_fontes_disponiveis() -> list[tuple[str, str]]:
 def _parse_data_pt(valor: str) -> datetime | None:
     if not valor or valor.lower() in {"none", "nan", "nat"}:
         return None
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d"):
+    valor = valor.strip()
+    for fmt in (
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%d/%m/%Y",
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%Y/%m/%d",
+    ):
         try:
             return datetime.strptime(valor, fmt)
         except ValueError:
             continue
     return None
+
+
+@st.cache_data
+def datas_dataset() -> tuple[str | None, str | None]:
+    """Retorna (data_extracao, data_final) máximas formatadas dd/mm/aaaa."""
+    if not DB_PATH.exists():
+        return None, None
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql(
+        f"SELECT MAX(DataExtracao) AS extracao, MAX(DataFinal) AS final "
+        f"FROM {TABLE}",
+        conn,
+    )
+    conn.close()
+    if df.empty:
+        return None, None
+    extracao_raw = df.iloc[0]["extracao"]
+    final_raw = df.iloc[0]["final"]
+    extracao_dt = _parse_data_pt(str(extracao_raw)) if extracao_raw else None
+    final_dt = _parse_data_pt(str(final_raw)) if final_raw else None
+    return (
+        extracao_dt.strftime("%d/%m/%Y") if extracao_dt else None,
+        final_dt.strftime("%d/%m/%Y") if final_dt else None,
+    )
 
 
 @st.cache_data
@@ -414,6 +447,25 @@ def main() -> None:
             titulo=f"Despesas por {nivel}",
             rotulo_dim=rotulo,
             unidade=unidade,
+        )
+
+    extracao, data_final = datas_dataset()
+    st.divider()
+    partes = []
+    if extracao:
+        partes.append(f"última extração da PMSP: **{extracao}**")
+    if data_final:
+        partes.append(f"valores cobertos até **{data_final}**")
+    if partes:
+        st.caption(
+            "Atualidade dos dados — " + " · ".join(partes) + ". "
+            "ETL local roda diariamente e só re-baixa o CSV se o "
+            "`Last-Modified` do servidor mudou."
+        )
+    else:
+        st.caption(
+            "Não foi possível identificar a data de extração no BD. "
+            "Verifique se as colunas DataExtracao/DataFinal estão presentes."
         )
 
 
