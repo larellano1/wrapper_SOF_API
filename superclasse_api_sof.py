@@ -118,7 +118,22 @@ class RequisicaoApi:
             url, headers=headers, timeout=60, verify=self._verify_ssl()
         ) as r:
             r.raise_for_status()
-            return r.json()
+            try:
+                payload = r.json()
+            except ValueError as exc:
+                snippet = r.text[:500]
+                raise RuntimeError(
+                    f"Resposta não-JSON da API SOF em {url}: {snippet}"
+                ) from exc
+
+        if isinstance(payload, dict) and "metadados" not in payload:
+            keys = list(payload.keys())
+            snippet = str(payload)[:500]
+            raise RuntimeError(
+                f"Resposta da API SOF sem envelope 'metadados'. "
+                f"URL: {url} | chaves recebidas: {keys} | trecho: {snippet}"
+            )
+        return payload
 
     def __formater_csv(self, dados, key_dados):
         if dados["metadados"]["txtStatus"] == "ERRO":
