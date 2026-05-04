@@ -19,7 +19,8 @@ import argparse
 import os
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import pandas as pd
@@ -83,6 +84,36 @@ def descobrir_url_atual(meses_para_tras: int = 12) -> str:
     )
 
 
+def _parse_last_modified(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def remoto_mais_novo(url: str, destino: Path) -> bool | None:
+    """Compara Last-Modified do remoto com mtime do cache local.
+
+    Retorna True se o remoto for mais novo (precisa baixar), False se o cache
+    já está em dia, ou None se não conseguiu decidir (HEAD falhou ou o
+    servidor não devolveu Last-Modified).
+    """
+    if not destino.exists():
+        return True
+    try:
+        r = requests.head(url, timeout=20, allow_redirects=True)
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+    remote_dt = _parse_last_modified(r.headers.get("Last-Modified"))
+    if remote_dt is None:
+        return None
+    local_dt = datetime.fromtimestamp(destino.stat().st_mtime, tz=timezone.utc)
+    return remote_dt > local_dt
+
+
 def baixar_csv(url: str, destino: Path) -> Path:
     destino.parent.mkdir(parents=True, exist_ok=True)
     print(f"Baixando {url}")
@@ -102,6 +133,10 @@ def baixar_csv(url: str, destino: Path) -> Path:
                         end="\r",
                     )
         print()
+        remote_dt = _parse_last_modified(r.headers.get("Last-Modified"))
+    if remote_dt is not None:
+        ts = remote_dt.timestamp()
+        os.utime(destino, (ts, ts))
     return destino
 
 
@@ -195,10 +230,23 @@ def main(argv: list[str] | None = None) -> int:
 
         DATA_DIR.mkdir(exist_ok=True)
         csv_path = DATA_DIR / url.rsplit("/", 1)[-1]
-        if csv_path.exists() and not args.force:
-            print(f"Cache encontrado: {csv_path} (use --force para rebaixar)")
-        else:
+        if args.force:
             baixar_csv(url, csv_path)
+        else:
+            status = remoto_mais_novo(url, csv_path)
+            if status is False:
+                print(
+                    f"Cache em {csv_path} já reflete a versão remota "
+                    "(Last-Modified inalterado). BD não precisa ser recarregado."
+                )
+                return 0
+            if status is None and csv_path.exists():
+                print(
+                    "Last-Modified indisponível; reaproveitando cache local "
+                    "e recarregando o BD por garantia."
+                )
+            else:
+                baixar_csv(url, csv_path)
 
     n = carregar_sqlite(csv_path)
     print(f"Pronto. {n:,} linhas em {DB_PATH}.")

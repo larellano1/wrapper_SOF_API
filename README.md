@@ -43,7 +43,10 @@ python etl_orcamento.py --force      # rebaixa mesmo se já houver cache
 
 A URL default também pode ser sobrescrita via variável de ambiente
 `ORCAMENTO_CSV_URL`. Para automatizar atualização diária, agende
-`python etl_orcamento.py --discover` em cron/systemd-timer.
+`python etl_orcamento.py --discover` em cron/systemd-timer — antes de
+baixar, o ETL faz um `HEAD` no servidor e compara o `Last-Modified` com
+o mtime do cache local; se nada mudou, sai em poucos segundos sem
+rebaixar 200 MB nem reprocessar o BD.
 
 ## Wrapper da API SOF (uso opcional)
 
