@@ -8,7 +8,7 @@ class Credores(RequisicaoApi):
     
     def __init__(self, cpf = '', cnpj = '', razao_social = '', nome_fantasia = '', tipo_fornecedor = '', csv = False):
         
-        self.consulta = 'consultarCredores'
+        self.consulta = 'credores'
         self.key_dados = 'lstCredores'
         self.csv = csv
         
@@ -37,7 +37,7 @@ class Modalidades(RequisicaoApi):
     
     def __init__(self, ano, categoria = '', modalidade = '', grupo = '', csv = False):
         
-        self.consulta = 'consultarModalidades'
+        self.consulta = 'modalidades'
         self.key_dados = 'lstModalidades'
         self.csv = csv
 
@@ -63,7 +63,7 @@ class ContasReceita(RequisicaoApi):
     
     def __init__(self, ano, cod_receita = '',csv = False):
         
-        self.consulta = 'consultarContasReceita'
+        self.consulta = 'contasReceita'
         self.key_dados = 'lstReceita'
         self.csv = csv
         
@@ -82,7 +82,7 @@ class Funcoes(RequisicaoApi):
     
     def __init__(self, ano, cod_funcao = '',csv = False):
         
-        self.consulta = 'consultarFuncoes'
+        self.consulta = 'funcoes'
         self.key_dados = 'lstFuncoes'
         self.csv = csv
         
@@ -100,7 +100,7 @@ class Contratos(RequisicaoApi):
     
     def __init__(self, cod_contrato = '', ano = '', cpf = '', cod_empresa = '', cod_orgao = '', csv = False):
         
-        self.consulta = 'consultaContrato'
+        self.consulta = 'contratos'
         self.key_dados = 'lstContratos'
         self.csv = csv
         
@@ -124,7 +124,7 @@ class Elementos(RequisicaoApi):
     
     def __init__(self, ano, cod_categoria = '', cod_grupo = '', cod_modalidade = '', cod_elemento = '', csv = False):
         
-        self.consulta = 'consultarElementos'
+        self.consulta = 'elementos'
         self.key_dados = 'lstElementos'
         self.csv = csv
         
@@ -151,7 +151,7 @@ class Grupos(RequisicaoApi):
     
     def __init__(self, ano, cod_categoria = '', cod_grupo = '', csv = False):
         
-        self.consulta = 'consultarGrupos'
+        self.consulta = 'grupos'
         self.key_dados = 'lstGrupos'
         self.csv = csv
         
@@ -172,7 +172,7 @@ class Categorias(RequisicaoApi):
     
     def __init__(self, ano, cod_categoria = '', csv = False):
         
-        self.consulta = 'consultarCategorias'
+        self.consulta = 'categorias'
         self.key_dados = 'lstCategorias'
         self.csv = csv
         
@@ -190,13 +190,13 @@ class Empenhos(RequisicaoApi):
     
     def __init__(self, ano, mes, cod_empenho = '', cod_empresa = '', cpf = '', cnpj = '', razao_social = '', cod_contrato = '', ano_contrato = '', cod_orgao = '', cod_unidade = '', funcao = '', subfuncao = '', projeto_atividade = '', programa = '',  categoria = '', grupo = '', modalidade = '', elemento = '', fonte = '', item_despesa = '',  subelemento = '', csv = False):
         
-        self.consulta = 'consultaEmpenhos'
+        self.consulta = 'empenhos'
         self.key_dados = 'lstEmpenhos'
         self.csv = csv
-        
+
         self.dict_consulta = {}
-                 
-        self.dict_consulta['anoExercicio'] = ano
+
+        self.dict_consulta['anoEmpenho'] = ano
         self.dict_consulta['mesEmpenho'] = mes
 
         if cod_empenho:
@@ -249,7 +249,7 @@ class CredoresdeContrato(RequisicaoApi):
     
     def __init__(self, ano, cod_contrato, cod_empresa, csv = False):
         
-        self.consulta = 'consultarCredoresDeContrato'
+        self.consulta = 'credoresDeContrato'
         self.key_dados = 'lstCredoresDeContrato'
         self.csv = csv
         
@@ -267,7 +267,7 @@ class SubElementos(RequisicaoApi):
     
     def __init__(self, ano, categoria, grupo, modalidade, elemento, subelemento ='',  csv = False):
         
-        self.consulta = 'consultarSubElementos'
+        self.consulta = 'subElementos'
         self.key_dados = 'lstSubElementos'
         self.csv = csv
         
@@ -290,7 +290,7 @@ class Programas(RequisicaoApi):
     
     def __init__(self, ano, programa = '', csv = False):
         
-        self.consulta = 'consultarProgramas'
+        self.consulta = 'programas'
         self.key_dados = 'lstProgramas'
         self.csv = csv
         
@@ -308,7 +308,7 @@ class MovimentosReceita(RequisicaoApi):
     
     def __init__(self, ano, mes = '', cod_receita = '', empresa = '', csv = False):
         
-        self.consulta = 'consultarMovimentosReceita'
+        self.consulta = 'movimentosReceita'
         self.key_dados = 'lstMonvimentosReceita'
         self.csv = csv
         
@@ -329,7 +329,7 @@ class FonteRecursos(RequisicaoApi):
     
     def __init__(self, ano, cod_fonte = '', csv = False):
         
-        self.consulta = 'consultarFonteRecursos'
+        self.consulta = 'fonteRecursos'
         self.key_dados = 'lstFontesRecursos'
         self.csv = csv
         
@@ -347,7 +347,7 @@ class ProjetosAtividades(RequisicaoApi):
     
     def __init__(self, ano, cod_projeto_atividade = '', csv = False):
         
-        self.consulta = 'consultarProjetosAtividades'
+        self.consulta = 'projetosAtividades'
         self.key_dados = 'lstProjetosAtividades'
         self.csv = csv
         
@@ -365,7 +365,7 @@ class Empresas(RequisicaoApi):
     
     def __init__(self, ano, cod_empresa = '', csv = False):
         
-        self.consulta = 'consultarEmpresas'
+        self.consulta = 'empresas'
         self.key_dados = 'lstEmpresas'
         self.csv = csv
         
@@ -383,7 +383,7 @@ class Liquidacoes(RequisicaoApi):
     
     def __init__(self, ano_empenho, cod_empenho, cod_empresa, csv = False):
         
-        self.consulta = 'consultarLiquidacoes'
+        self.consulta = 'liquidacoes'
         self.key_dados = 'lstLiquidacoes'
         self.csv = csv
         
@@ -401,7 +401,7 @@ class Orgaos(RequisicaoApi):
     
     def __init__(self, ano, cod_orgao = '', cod_empresa = '', csv = False):
         
-        self.consulta = 'consultarOrgaos'
+        self.consulta = 'orgaos'
         self.key_dados = 'lstOrgaos'
         self.csv = csv
         
@@ -421,7 +421,7 @@ class DespesasCredor(RequisicaoApi):
     
     def __init__(self, ano, mes, cpf = '', cnpj = '', razao_social = '', cod_empresa = '', cod_orgao = '', cod_unidade = '', funcao = '', subfuncao = '', projeto_atividade = '', programa = '',  categoria = '', grupo = '', modalidade = '', elemento = '', fonte = '', item_despesa = '',  subelemento = '', csv = False):
         
-        self.consulta = 'consultarDespesasCredor'
+        self.consulta = 'despesasCredor'
         self.key_dados = 'lstCredores'
         self.csv = csv
         
@@ -474,7 +474,7 @@ class ItensDespesa(RequisicaoApi):
     
     def __init__(self, ano,  categoria = '', grupo = '', modalidade = '', elemento = '', item_despesa = '',  subelemento = '', csv = False):
         
-        self.consulta = 'consultarItensDespesa'
+        self.consulta = 'itensDespesa'
         self.key_dados = 'lstItensDespesa'
         self.csv = csv
         
@@ -504,7 +504,7 @@ class Unidades(RequisicaoApi):
     
     def __init__(self, ano, cod_orgao, cod_unidade = '', csv = False):
         
-        self.consulta = 'consultarUnidades'
+        self.consulta = 'unidades'
         self.key_dados = 'lstUnidades'
         self.csv = csv
         
@@ -523,7 +523,7 @@ class Despesas(RequisicaoApi):
     
     def __init__(self, ano_dotacao, mes_dotacao, cod_empresa = '', cod_orgao = '', cod_unidade = '', funcao = '', subfuncao = '', projeto_atividade = '', programa = '',  categoria = '', grupo = '', modalidade = '', elemento = '', fonte = '', csv = False):
         
-        self.consulta = 'consultarDespesas'
+        self.consulta = 'despesas'
         self.key_dados = 'lstDespesas'
         self.csv = csv
         
