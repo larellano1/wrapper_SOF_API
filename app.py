@@ -185,11 +185,14 @@ def carregar_agregado(
     anos: tuple[int, ...],
     fontes: tuple[str, ...] = (),
     orgaos: tuple[str, ...] = (),
+    incluir_restos: bool = True,
 ) -> pd.DataFrame:
     conn = sqlite3.connect(DB_PATH)
     placeholders_anos = ",".join("?" * len(anos))
     params: list = list(anos)
     where_extra = ""
+    if not incluir_restos:
+        where_extra += " AND Cd_Exercicio = Cd_AnoExecucao"
     if fontes:
         placeholders_fontes = ",".join("?" * len(fontes))
         where_extra += f" AND Cd_Fonte IN ({placeholders_fontes})"
@@ -385,6 +388,17 @@ def main() -> None:
             options=list(UNIDADES.keys()),
             index=2,
         )
+        incluir_restos = st.checkbox(
+            "Incluir restos a pagar",
+            value=True,
+            help=(
+                "Quando marcado, os totais incluem movimentações de restos a "
+                "pagar (linhas onde Cd_Exercicio ≠ Cd_AnoExecucao — ex.: "
+                "pagamentos em 2026 de empenhos de 2024). Desmarcado, "
+                "filtra só Cd_Exercicio = Cd_AnoExecucao, mostrando apenas "
+                "a execução do próprio exercício."
+            ),
+        )
         modo_comparacao = st.radio(
             "Modo de comparação",
             options=["Acumulado", "Anualizado"],
@@ -408,7 +422,7 @@ def main() -> None:
     orgaos_codigos = tuple(orgao_label_to_cod[lbl] for lbl in orgaos_labels)
     unidade = UNIDADES[unidade_label]
     df_all = carregar_agregado(
-        tuple(sorted(anos)), fontes_codigos, orgaos_codigos
+        tuple(sorted(anos)), fontes_codigos, orgaos_codigos, incluir_restos
     )
     if df_all.empty:
         st.error("Nenhum dado encontrado para os filtros selecionados.")
@@ -479,16 +493,20 @@ def main() -> None:
         partes.append(f"última extração da PMSP: **{extracao}**")
     if data_final:
         partes.append(f"valores cobertos até **{data_final}**")
+    modo_restos = (
+        "**com** restos a pagar" if incluir_restos else "**sem** restos a pagar"
+    )
     if partes:
         st.caption(
-            "Atualidade dos dados — " + " · ".join(partes) + ". "
+            "Atualidade dos dados — " + " · ".join(partes) + f" · {modo_restos}. "
             "ETL local roda diariamente e só re-baixa o CSV se o "
             "`Last-Modified` do servidor mudou."
         )
     else:
         st.caption(
-            "Não foi possível identificar a data de extração no BD. "
-            "Verifique se as colunas DataExtracao/DataFinal estão presentes."
+            f"Modo: {modo_restos}. Não foi possível identificar a data de "
+            "extração no BD — verifique se DataExtracao/DataFinal estão "
+            "presentes."
         )
 
 
