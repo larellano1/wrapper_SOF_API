@@ -1,116 +1,72 @@
 """Dashboard Orçamentário da Prefeitura de São Paulo.
 
-Consome a API do SOF (Sistema Orçamentário Financeiro) via wrapper local
-e exibe despesas (empenhada, liquidada e paga) por Órgão, Função e
-Categoria Econômica, com comparação entre anos e evolução temporal.
+Lê dados de um SQLite local (`despesas.db`) populado por `etl_orcamento.py`
+a partir do CSV consolidado da Execução Orçamentária da PMSP.
 """
 
 from __future__ import annotations
 
-import os
-import sys
-from datetime import datetime
+import sqlite3
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from consultas_api_sof import (  # noqa: E402
-    Categorias,
-    Despesas,
-    Funcoes,
-    Orgaos,
-)
-
-
-def _check_credentials() -> str | None:
-    if os.getenv("SOF_API_TOKEN"):
-        return None
-    if os.getenv("SOF_API_CONSUMER_KEY") and os.getenv("SOF_API_CONSUMER_SECRET"):
-        return None
-    return (
-        "Credenciais da API SOF não configuradas. Crie um arquivo `.env` "
-        "(use `.env.example` como base) com `SOF_API_CONSUMER_KEY` e "
-        "`SOF_API_CONSUMER_SECRET`, ou exporte `SOF_API_TOKEN`. "
-        "Cadastro: https://apilib.prefeitura.sp.gov.br/store/"
-    )
-
+DB_PATH = Path(__file__).parent / "despesas.db"
+TABLE = "execucao"
 
 st.set_page_config(
     page_title="Dashboard Orçamentário - PMSP",
-    page_icon="📊",
+    page_icon=":bar_chart:",
     layout="wide",
 )
 
 
-VALOR_CANDIDATOS = {
-    "Empenhada": ["valTotalEmpenhadoLiquido", "valTotalEmpenhado", "valEmpenhadoLiquido"],
-    "Liquidada": ["valTotalLiquidadoLiquido", "valTotalLiquidado", "valLiquidadoLiquido"],
-    "Paga": ["valTotalPagoExercicio", "valTotalPago", "valPagoExercicio"],
-}
-
-DESC_CANDIDATOS = {
-    "codOrgao": ["txtDescricaoOrgao", "txtOrgao", "nomOrgao"],
-    "codFuncao": ["txtDescricaoFuncao", "txtFuncao", "nomFuncao"],
-    "codCategoria": ["txtDescricaoCategoria", "txtCategoria", "nomCategoria"],
-}
-
-
-def _primeira_coluna_existente(df: pd.DataFrame, candidatos: list[str]) -> str | None:
-    for c in candidatos:
-        if c in df.columns:
-            return c
-    return None
-
-
-def _to_numeric(serie: pd.Series) -> pd.Series:
-    return pd.to_numeric(serie, errors="coerce").fillna(0.0)
+@st.cache_data
+def listar_anos_disponiveis() -> list[int]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql(
+        f"SELECT DISTINCT Cd_Exercicio FROM {TABLE} "
+        "WHERE Cd_Exercicio IS NOT NULL ORDER BY Cd_Exercicio",
+        conn,
+    )
+    conn.close()
+    anos = []
+    for valor in df["Cd_Exercicio"]:
+        try:
+            anos.append(int(valor))
+        except (TypeError, ValueError):
+            continue
+    return anos
 
 
-@st.cache_data(show_spinner="Consultando API SOF — pode demorar alguns minutos…")
-def carregar_despesas(ano: int, mes: int) -> pd.DataFrame:
-    return Despesas(ano_dotacao=ano, mes_dotacao=mes).dados
-
-
-@st.cache_data(show_spinner="Carregando descrições…")
-def carregar_orgaos(ano: int) -> pd.DataFrame:
-    return Orgaos(ano=ano).dados
-
-
-@st.cache_data(show_spinner="Carregando descrições…")
-def carregar_funcoes(ano: int) -> pd.DataFrame:
-    return Funcoes(ano=ano).dados
-
-
-@st.cache_data(show_spinner="Carregando descrições…")
-def carregar_categorias(ano: int) -> pd.DataFrame:
-    return Categorias(ano=ano).dados
-
-
-def normalizar_fases(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for fase, cands in VALOR_CANDIDATOS.items():
-        col = _primeira_coluna_existente(df, cands)
-        df[fase] = _to_numeric(df[col]) if col else 0.0
+@st.cache_data(show_spinner="Lendo dados do BD local...")
+def carregar_agregado(anos: tuple[int, ...]) -> pd.DataFrame:
+    conn = sqlite3.connect(DB_PATH)
+    placeholders = ",".join("?" * len(anos))
+    query = f"""
+        SELECT
+            CAST(Cd_Exercicio AS INTEGER) AS Ano,
+            Cd_Orgao,
+            Ds_Orgao,
+            Cd_Funcao,
+            Ds_Funcao,
+            Categoria_Despesa AS Cd_Categoria,
+            Ds_Categoria,
+            SUM(Vl_EmpenhadoLiquido) AS Empenhada,
+            SUM(Vl_Liquidado) AS Liquidada,
+            SUM(Vl_Pago) AS Paga
+        FROM {TABLE}
+        WHERE CAST(Cd_Exercicio AS INTEGER) IN ({placeholders})
+        GROUP BY Cd_Exercicio, Cd_Orgao, Ds_Orgao, Cd_Funcao, Ds_Funcao,
+                 Categoria_Despesa, Ds_Categoria
+    """
+    df = pd.read_sql(query, conn, params=list(anos))
+    conn.close()
     return df
-
-
-def mapa_descricoes(df_desc: pd.DataFrame, cod_col: str) -> dict[str, str]:
-    if df_desc is None or df_desc.empty or cod_col not in df_desc.columns:
-        return {}
-    desc_col = _primeira_coluna_existente(df_desc, DESC_CANDIDATOS[cod_col])
-    if desc_col is None:
-        return {}
-    return dict(zip(df_desc[cod_col].astype(str), df_desc[desc_col].astype(str)))
 
 
 def formatar_brl(valor: float) -> str:
@@ -121,37 +77,20 @@ def formatar_brl(valor: float) -> str:
 def render_secao(
     df_all: pd.DataFrame,
     anos: list[int],
-    dim_cod: str,
-    fetcher_desc,
+    cod_col: str,
+    desc_col: str,
     titulo: str,
     rotulo_dim: str,
 ) -> None:
     st.header(titulo)
-
-    if dim_cod not in df_all.columns:
-        st.warning(
-            f"O campo `{dim_cod}` não foi encontrado no retorno da API. "
-            f"Colunas disponíveis: {sorted(df_all.columns.tolist())}"
-        )
-        return
-
-    ultimo_ano = max(anos)
-    try:
-        df_desc = fetcher_desc(ultimo_ano)
-    except Exception as exc:
-        st.warning(f"Não foi possível carregar descrições: {exc}")
-        df_desc = pd.DataFrame()
-    descricoes = mapa_descricoes(df_desc, dim_cod)
-
-    df_x = df_all.copy()
-    df_x[dim_cod] = df_x[dim_cod].astype(str)
-    df_x[rotulo_dim] = df_x[dim_cod].map(descricoes).fillna(df_x[dim_cod])
+    df = df_all.copy()
+    df[cod_col] = df[cod_col].astype(str)
+    df[rotulo_dim] = df[desc_col].fillna(df[cod_col])
 
     agg = (
-        df_x.groupby(["Ano", dim_cod, rotulo_dim], as_index=False)[
+        df.groupby(["Ano", cod_col, rotulo_dim], as_index=False)[
             ["Empenhada", "Liquidada", "Paga"]
-        ]
-        .sum()
+        ].sum()
     )
 
     st.subheader("Totais por ano")
@@ -169,10 +108,7 @@ def render_secao(
         key=f"fase_barra_{titulo}",
     )
     top = (
-        agg.groupby(rotulo_dim)[fase_barra]
-        .sum()
-        .nlargest(15)
-        .index.tolist()
+        agg.groupby(rotulo_dim)[fase_barra].sum().nlargest(15).index.tolist()
     )
     agg_top = agg[agg[rotulo_dim].isin(top)].copy()
     agg_top["Ano"] = agg_top["Ano"].astype(str)
@@ -228,32 +164,30 @@ def render_secao(
 def main() -> None:
     st.title("Dashboard Orçamentário — Prefeitura de São Paulo")
     st.caption(
-        "Fonte: API do SOF (Sistema Orçamentário Financeiro) da PMSP — "
-        "valores em R$, agregados a partir de `consultarDespesas`."
+        "Fonte: Base de Dados da Execução Orçamentária (CSV consolidado, "
+        "`orcamento.prefeitura.sp.gov.br`) — carregada em SQLite local "
+        "via `etl_orcamento.py`. Valores: Empenhada (líquida), Liquidada e Paga."
     )
 
-    erro_cred = _check_credentials()
-    if erro_cred:
-        st.error(erro_cred)
+    anos_disp = listar_anos_disponiveis()
+    if not anos_disp:
+        st.error(
+            f"Banco de dados local não encontrado em `{DB_PATH}`. "
+            "Execute primeiro: `python etl_orcamento.py` para baixar o CSV "
+            "e popular o SQLite."
+        )
         st.stop()
 
-    ano_atual = datetime.now().year
     with st.sidebar:
         st.header("Filtros")
+        max_ano = max(anos_disp)
+        default_anos = (
+            [max_ano - 1, max_ano] if (max_ano - 1) in anos_disp else [max_ano]
+        )
         anos = st.multiselect(
             "Anos para comparação",
-            options=list(range(2018, ano_atual + 1)),
-            default=[ano_atual - 1, ano_atual],
-            help="A API SOF disponibiliza dados a partir de 2003, mas os "
-            "endpoints podem ter limites por ano.",
-        )
-        mes = st.slider(
-            "Mês de referência (acumulado até)",
-            min_value=1,
-            max_value=12,
-            value=12,
-            help="A consulta de Despesas retorna valores acumulados até o mês "
-            "indicado. Use 12 para fechamento anual.",
+            options=anos_disp,
+            default=default_anos,
         )
         if st.button("Limpar cache e recarregar"):
             st.cache_data.clear()
@@ -263,30 +197,10 @@ def main() -> None:
         st.info("Selecione ao menos um ano na barra lateral para começar.")
         st.stop()
 
-    dfs: list[pd.DataFrame] = []
-    erros: list[str] = []
-    for ano in sorted(anos):
-        try:
-            df = carregar_despesas(ano, mes)
-        except Exception as exc:
-            erros.append(f"{ano}: {exc}")
-            continue
-        if df is None or df.empty:
-            erros.append(f"{ano}: sem dados retornados.")
-            continue
-        df = normalizar_fases(df)
-        df["Ano"] = ano
-        dfs.append(df)
-
-    if erros:
-        for e in erros:
-            st.warning(e)
-
-    if not dfs:
-        st.error("Não foi possível carregar dados para nenhum dos anos selecionados.")
+    df_all = carregar_agregado(tuple(sorted(anos)))
+    if df_all.empty:
+        st.error("Nenhum dado encontrado para os anos selecionados.")
         st.stop()
-
-    df_all = pd.concat(dfs, ignore_index=True)
 
     aba_orgao, aba_funcao, aba_cat = st.tabs(
         [
@@ -300,8 +214,8 @@ def main() -> None:
         render_secao(
             df_all,
             anos,
-            dim_cod="codOrgao",
-            fetcher_desc=carregar_orgaos,
+            cod_col="Cd_Orgao",
+            desc_col="Ds_Orgao",
             titulo="Despesas por Órgão",
             rotulo_dim="Órgão",
         )
@@ -310,8 +224,8 @@ def main() -> None:
         render_secao(
             df_all,
             anos,
-            dim_cod="codFuncao",
-            fetcher_desc=carregar_funcoes,
+            cod_col="Cd_Funcao",
+            desc_col="Ds_Funcao",
             titulo="Despesas por Função",
             rotulo_dim="Função",
         )
@@ -320,8 +234,8 @@ def main() -> None:
         render_secao(
             df_all,
             anos,
-            dim_cod="codCategoria",
-            fetcher_desc=carregar_categorias,
+            cod_col="Cd_Categoria",
+            desc_col="Ds_Categoria",
             titulo="Despesas por Categoria Econômica",
             rotulo_dim="Categoria",
         )
