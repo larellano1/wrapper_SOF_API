@@ -97,25 +97,37 @@ def _parse_data_pt(valor: str) -> datetime | None:
 
 @st.cache_data
 def datas_dataset() -> tuple[str | None, str | None]:
-    """Retorna (data_extracao, data_final) máximas formatadas dd/mm/aaaa."""
+    """Retorna (data_extracao_max, data_final_max) formatadas dd/mm/aaaa.
+
+    O parsing é feito em Python porque as colunas estão como strings
+    dd/mm/aaaa no SQLite — usar MAX() direto faz comparação lexicográfica
+    e devolve, p.ex., "31/12/2025" como maior que "30/04/2026".
+    """
     if not DB_PATH.exists():
         return None, None
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql(
-        f"SELECT MAX(DataExtracao) AS extracao, MAX(DataFinal) AS final "
-        f"FROM {TABLE}",
+        f"SELECT DISTINCT DataExtracao, DataFinal FROM {TABLE} "
+        "WHERE DataExtracao IS NOT NULL OR DataFinal IS NOT NULL",
         conn,
     )
     conn.close()
-    if df.empty:
-        return None, None
-    extracao_raw = df.iloc[0]["extracao"]
-    final_raw = df.iloc[0]["final"]
-    extracao_dt = _parse_data_pt(str(extracao_raw)) if extracao_raw else None
-    final_dt = _parse_data_pt(str(final_raw)) if final_raw else None
+    extracoes: list[datetime] = []
+    finais: list[datetime] = []
+    for row in df.itertuples():
+        if row.DataExtracao:
+            d = _parse_data_pt(str(row.DataExtracao))
+            if d is not None:
+                extracoes.append(d)
+        if row.DataFinal:
+            d = _parse_data_pt(str(row.DataFinal))
+            if d is not None:
+                finais.append(d)
+    extracao_max = max(extracoes) if extracoes else None
+    final_max = max(finais) if finais else None
     return (
-        extracao_dt.strftime("%d/%m/%Y") if extracao_dt else None,
-        final_dt.strftime("%d/%m/%Y") if final_dt else None,
+        extracao_max.strftime("%d/%m/%Y") if extracao_max else None,
+        final_max.strftime("%d/%m/%Y") if final_max else None,
     )
 
 
@@ -123,28 +135,31 @@ def datas_dataset() -> tuple[str | None, str | None]:
 def mes_de_corte_por_ano() -> dict[int, int]:
     """Retorna {ano: mês_máximo_de_DataFinal} a partir do BD.
 
-    Para anos passados normalmente é 12 (snapshot final do exercício); para o
-    ano corrente, é o mês da última extração.
+    Para anos passados normalmente é 12 (snapshot final do exercício); para
+    o ano corrente, é o mês da última extração. O MAX é calculado em Python
+    para evitar comparação lexicográfica do dd/mm/aaaa em SQLite.
     """
     if not DB_PATH.exists():
         return {}
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql(
-        f"SELECT Cd_Exercicio, MAX(DataFinal) AS DataFinal FROM {TABLE} "
-        "WHERE DataFinal IS NOT NULL GROUP BY Cd_Exercicio",
+        f"SELECT DISTINCT Cd_Exercicio, DataFinal FROM {TABLE} "
+        "WHERE DataFinal IS NOT NULL",
         conn,
     )
     conn.close()
-    cortes: dict[int, int] = {}
+    melhor: dict[int, datetime] = {}
     for row in df.itertuples():
         try:
             ano = int(row.Cd_Exercicio)
         except (TypeError, ValueError):
             continue
         d = _parse_data_pt(str(row.DataFinal))
-        if d is not None:
-            cortes[ano] = d.month
-    return cortes
+        if d is None:
+            continue
+        if ano not in melhor or d > melhor[ano]:
+            melhor[ano] = d
+    return {ano: dt.month for ano, dt in melhor.items()}
 
 
 @st.cache_data
