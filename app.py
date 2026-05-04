@@ -43,10 +43,36 @@ def listar_anos_disponiveis() -> list[int]:
     return anos
 
 
-@st.cache_data(show_spinner="Lendo dados do BD local...")
-def carregar_agregado(anos: tuple[int, ...]) -> pd.DataFrame:
+@st.cache_data
+def listar_fontes_disponiveis() -> list[tuple[str, str]]:
+    if not DB_PATH.exists():
+        return []
     conn = sqlite3.connect(DB_PATH)
-    placeholders = ",".join("?" * len(anos))
+    df = pd.read_sql(
+        f"SELECT DISTINCT Cd_Fonte, Ds_Fonte FROM {TABLE} "
+        "WHERE Cd_Fonte IS NOT NULL "
+        "ORDER BY CAST(Cd_Fonte AS INTEGER)",
+        conn,
+    )
+    conn.close()
+    return [
+        (str(row.Cd_Fonte), str(row.Ds_Fonte) if row.Ds_Fonte else "")
+        for row in df.itertuples()
+    ]
+
+
+@st.cache_data(show_spinner="Lendo dados do BD local...")
+def carregar_agregado(
+    anos: tuple[int, ...], fontes: tuple[str, ...] = ()
+) -> pd.DataFrame:
+    conn = sqlite3.connect(DB_PATH)
+    placeholders_anos = ",".join("?" * len(anos))
+    params: list = list(anos)
+    where_extra = ""
+    if fontes:
+        placeholders_fontes = ",".join("?" * len(fontes))
+        where_extra = f" AND Cd_Fonte IN ({placeholders_fontes})"
+        params.extend(fontes)
     query = f"""
         SELECT
             CAST(Cd_Exercicio AS INTEGER) AS Ano,
@@ -56,15 +82,17 @@ def carregar_agregado(anos: tuple[int, ...]) -> pd.DataFrame:
             Ds_Funcao,
             Categoria_Despesa AS Cd_Categoria,
             Ds_Categoria,
+            Grupo_Despesa AS Cd_Grupo,
+            Ds_Grupo,
             SUM(Vl_EmpenhadoLiquido) AS Empenhada,
             SUM(Vl_Liquidado) AS Liquidada,
             SUM(Vl_Pago) AS Paga
         FROM {TABLE}
-        WHERE CAST(Cd_Exercicio AS INTEGER) IN ({placeholders})
+        WHERE CAST(Cd_Exercicio AS INTEGER) IN ({placeholders_anos}){where_extra}
         GROUP BY Cd_Exercicio, Cd_Orgao, Ds_Orgao, Cd_Funcao, Ds_Funcao,
-                 Categoria_Despesa, Ds_Categoria
+                 Categoria_Despesa, Ds_Categoria, Grupo_Despesa, Ds_Grupo
     """
-    df = pd.read_sql(query, conn, params=list(anos))
+    df = pd.read_sql(query, conn, params=params)
     conn.close()
     return df
 
@@ -124,36 +152,6 @@ def render_secao(
     fig_bar.update_layout(xaxis_tickangle=-45, height=520)
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.subheader(f"Evolução por {rotulo_dim.lower()}")
-    opcoes = sorted(agg[rotulo_dim].unique())
-    default_sel = opcoes[: min(3, len(opcoes))]
-    selecionados = st.multiselect(
-        f"Selecione {rotulo_dim.lower()}(s) para visualizar a evolução",
-        options=opcoes,
-        default=default_sel,
-        key=f"evol_sel_{titulo}",
-    )
-    if selecionados:
-        df_evol = agg[agg[rotulo_dim].isin(selecionados)]
-        df_long = df_evol.melt(
-            id_vars=["Ano", rotulo_dim],
-            value_vars=["Empenhada", "Liquidada", "Paga"],
-            var_name="Fase",
-            value_name="Valor",
-        )
-        fig_line = px.line(
-            df_long.sort_values("Ano"),
-            x="Ano",
-            y="Valor",
-            color=rotulo_dim,
-            line_dash="Fase",
-            markers=True,
-            title="Evolução das fases por ano",
-            labels={"Valor": "R$"},
-        )
-        fig_line.update_layout(height=520)
-        st.plotly_chart(fig_line, use_container_width=True)
-
     with st.expander("Ver tabela agregada"):
         tabela = agg.copy()
         for fase in ["Empenhada", "Liquidada", "Paga"]:
@@ -178,6 +176,11 @@ def main() -> None:
         )
         st.stop()
 
+    fontes_disp = listar_fontes_disponiveis()
+    fonte_label_to_cod = {
+        f"{cod} — {desc}" if desc else cod: cod for cod, desc in fontes_disp
+    }
+
     with st.sidebar:
         st.header("Filtros")
         max_ano = max(anos_disp)
@@ -189,6 +192,12 @@ def main() -> None:
             options=anos_disp,
             default=default_anos,
         )
+        fontes_labels = st.multiselect(
+            "Fonte de recurso",
+            options=list(fonte_label_to_cod.keys()),
+            default=[],
+            help="Vazio = todas as fontes.",
+        )
         if st.button("Limpar cache e recarregar"):
             st.cache_data.clear()
             st.rerun()
@@ -197,7 +206,8 @@ def main() -> None:
         st.info("Selecione ao menos um ano na barra lateral para começar.")
         st.stop()
 
-    df_all = carregar_agregado(tuple(sorted(anos)))
+    fontes_codigos = tuple(fonte_label_to_cod[lbl] for lbl in fontes_labels)
+    df_all = carregar_agregado(tuple(sorted(anos)), fontes_codigos)
     if df_all.empty:
         st.error("Nenhum dado encontrado para os anos selecionados.")
         st.stop()
@@ -231,13 +241,23 @@ def main() -> None:
         )
 
     with aba_cat:
+        nivel = st.radio(
+            "Nível de detalhe",
+            options=["Categoria Econômica", "Grupo de Despesa"],
+            horizontal=True,
+            key="nivel_categoria",
+        )
+        if nivel == "Categoria Econômica":
+            cod_col, desc_col, rotulo = "Cd_Categoria", "Ds_Categoria", "Categoria"
+        else:
+            cod_col, desc_col, rotulo = "Cd_Grupo", "Ds_Grupo", "Grupo"
         render_secao(
             df_all,
             anos,
-            cod_col="Cd_Categoria",
-            desc_col="Ds_Categoria",
-            titulo="Despesas por Categoria Econômica",
-            rotulo_dim="Categoria",
+            cod_col=cod_col,
+            desc_col=desc_col,
+            titulo=f"Despesas por {nivel}",
+            rotulo_dim=rotulo,
         )
 
 
