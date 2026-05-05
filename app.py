@@ -6,9 +6,16 @@ a partir do CSV consolidado da Execução Orçamentária da PMSP.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import pandas as pd
 import plotly.express as px
@@ -334,6 +341,80 @@ def render_secao(
         st.dataframe(tabela, use_container_width=True)
 
 
+def _grafico_da_resposta(spec: dict | None):
+    if not spec:
+        return None
+    tipo = spec.get("tipo", "none")
+    if tipo == "none":
+        return None
+    x = spec.get("x") or []
+    y = spec.get("y") or []
+    if not x or not y or len(x) != len(y):
+        return None
+    x_label = spec.get("x_label") or "x"
+    y_label = spec.get("y_label") or "Valor (R$)"
+    titulo = spec.get("titulo") or ""
+    df = pd.DataFrame({x_label: x, y_label: y})
+    if tipo == "bar":
+        fig = px.bar(df, x=x_label, y=y_label, title=titulo)
+    elif tipo == "line":
+        fig = px.line(df, x=x_label, y=y_label, title=titulo, markers=True)
+    else:
+        return None
+    fig.update_layout(height=420)
+    return fig
+
+
+def render_qa() -> None:
+    st.header("Pergunte aos dados")
+    st.caption(
+        "Faça uma pergunta em português sobre o orçamento da PMSP. O Claude "
+        "(Haiku 4.5) consulta o BD local e devolve uma análise resumida."
+    )
+
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        st.warning(
+            "`ANTHROPIC_API_KEY` não configurada. Gere uma key em "
+            "https://console.anthropic.com e adicione ao arquivo `.env`."
+        )
+
+    pergunta = st.text_area(
+        "Sua pergunta",
+        placeholder=(
+            "Ex.: Quanto cresceu a despesa com 'Sentenças Judiciais' "
+            "entre 2021 e 2026?"
+        ),
+        height=100,
+        key="qa_pergunta",
+    )
+    if st.button("Perguntar", type="primary", disabled=not pergunta.strip()):
+        with st.spinner("Consultando dados…"):
+            from nl_query import perguntar
+            st.session_state["qa_resposta"] = perguntar(pergunta.strip())
+
+    resp = st.session_state.get("qa_resposta")
+    if not resp:
+        return
+
+    if "erro" in resp:
+        st.error(resp["erro"])
+        return
+
+    st.markdown(resp.get("texto", ""))
+    fig = _grafico_da_resposta(resp.get("grafico"))
+    if fig is not None:
+        st.plotly_chart(fig, use_container_width=True)
+
+    trace = resp.get("trace")
+    if trace:
+        with st.expander("Detalhes (chamadas de ferramenta)"):
+            for i, evento in enumerate(trace, start=1):
+                st.markdown(f"**{i}.** `{evento['tool']}`")
+                st.json(evento.get("input"), expanded=False)
+                if "resultado" in evento:
+                    st.json(evento["resultado"], expanded=False)
+
+
 def main() -> None:
     st.title("Dashboard Orçamentário — Prefeitura de São Paulo")
     st.caption(
@@ -447,10 +528,11 @@ def main() -> None:
                 "valores idênticos ao modo Acumulado."
             )
 
-    aba_funcao, aba_cat = st.tabs(
+    aba_funcao, aba_cat, aba_qa = st.tabs(
         [
             "Despesas por Função",
             "Despesas por Categoria Econômica",
+            "Pergunte aos dados",
         ]
     )
 
@@ -485,6 +567,9 @@ def main() -> None:
             rotulo_dim=rotulo,
             unidade=unidade,
         )
+
+    with aba_qa:
+        render_qa()
 
     extracao, data_final = datas_dataset()
     st.divider()

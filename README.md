@@ -48,6 +48,27 @@ baixar, o ETL faz um `HEAD` no servidor e compara o `Last-Modified` com
 o mtime do cache local; se nada mudou, sai em poucos segundos sem
 rebaixar 200 MB nem reprocessar o BD.
 
+### Pergunte aos dados (Q&A em linguagem natural)
+
+A aba **"Pergunte aos dados"** aceita perguntas em português e devolve
+uma análise resumida com gráfico, usando a API do Claude (Haiku 4.5) com
+tool-use. Exemplo: *"Quanto cresceu a despesa com Sentenças Judiciais
+entre 2021 e 2026?"*. O modelo chama `buscar_dimensao` para localizar
+o nome no BD, faz `consultar` (SELECT read-only) e responde com texto
++ gráfico.
+
+Para habilitar:
+
+1. Crie uma key em [console.anthropic.com](https://console.anthropic.com)
+   (cadastro + adicionar crédito; Haiku 4.5 custa ~US$ 1 por 1M tokens).
+2. Adicione ao `.env`:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-api03-...
+   ```
+3. Instale a dependência: `pip install -r requirements.txt`.
+
+Cada pergunta consome ~1k-5k tokens (custo da ordem de US$ 0,001-0,005).
+
 ## Wrapper da API SOF (uso opcional)
 
 Para consultas granulares à API SOF v4 (host `gateway.apilib.prefeitura.sp.gov.br`),
